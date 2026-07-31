@@ -1,0 +1,5 @@
+{
+  "name": "evidence-citation-gate",
+  "description": "Enforces the evidence-citation discipline (issue #1) on api-design phase-1 proposals: any 'standard/common/established practice' claim must name a source in the same paragraph.",
+  "author": { "name": "Jung Jiwon & Lee Jongkwan" }
+}

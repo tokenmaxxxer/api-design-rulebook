@@ -1,0 +1,5 @@
+{
+  "name": "adr-section-gate",
+  "description": "Enforces the ADR-shaped proposal norm (issue #1) on api-design phase-1 proposals: context, decision, alternatives considered, rationale, consequences all present and non-empty.",
+  "author": { "name": "Jung Jiwon & Lee Jongkwan" }
+}

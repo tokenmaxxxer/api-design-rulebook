@@ -1,0 +1,5 @@
+{
+  "name": "versioning-strategy-gate",
+  "description": "Enforces the API-First deliverable norm's versioning-strategy facet on api-design phase-2 records: a named versioning mechanism (or explicit 'none — pre-v1'), per Zalando's API-versioning rule.",
+  "author": { "name": "Jung Jiwon & Lee Jongkwan" }
+}

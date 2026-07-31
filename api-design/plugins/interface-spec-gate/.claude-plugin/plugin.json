@@ -1,0 +1,5 @@
+{
+  "name": "interface-spec-gate",
+  "description": "Enforces the API-First deliverable norm's interface-spec facet on api-design phase-2 records: a machine-readable spec format must be named, per Zalando RESTful API Guidelines rules 101-102 (Provide API Specification using OpenAPI).",
+  "author": { "name": "Jung Jiwon & Lee Jongkwan" }
+}
