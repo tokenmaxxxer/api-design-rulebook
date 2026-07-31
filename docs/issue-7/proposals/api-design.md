@@ -34,6 +34,93 @@ from one bundled gate covering two methodologies, to one independent,
 complete plugin per methodology, composed together where a norm spans
 more than one methodology.
 
+This revision further responds to a second round of approver feedback
+(domain review, WEAK verdict), also restated verbatim so the
+requirement is traceable:
+
+> FEEDBACK (승인자 전달 — 도메인 전수 심사 WEAK 판정): 공인 canon을 실명
+> 채택하라: Google AIP 또는 Microsoft/Zalando REST 가이드라인을 규범
+> 소스로, deprecation facet에 RFC 8594(Sunset)/Deprecation 헤더. 자체
+> facet의 인용 게이트가 정작 자기 규범의 출처를 안 대는 모순 해소. 이
+> 브랜치에 이어서 proposal을 개정하라.
+
+This revision resolves that WEAK verdict by (a) naming a single
+concrete canon — the **Zalando RESTful API Guidelines** — as the
+source of every facet check `interface-spec-gate`,
+`resource-model-gate`, `versioning-strategy-gate`, and
+`deprecation-plan-gate` enforce, replacing the previously-unsourced
+generic descriptions of each facet with the specific Zalando rule(s)
+that check derives from; (b) naming **RFC 8594 (`Sunset` HTTP header
+field)** plus Zalando's own `Deprecation` header convention as the
+concrete mechanism `deprecation-plan-gate` requires a record to state,
+replacing the previous "concrete window + migration path" phrasing
+with those two named header mechanisms; and (c) making
+`evidence-citation-gate` itself cite this same canon adoption as its
+own source, closing the self-referential gap the feedback identified
+— a gate that demands every "standard practice" claim name a source
+cannot itself rest on an unsourced "this is standard practice" claim
+about which canon governs this rulebook. See "Canon source
+(new)" immediately below Context, and the per-plugin table and facet
+sections further down, for the concrete rule citations.
+
+## Canon source (adopted, resolves domain-review WEAK verdict)
+
+This rulebook adopts the **Zalando RESTful API Guidelines**
+(<https://opensource.zalando.com/restful-api-guidelines/>) as the
+named canon governing every facet of the phase-2 API-First deliverable
+norm, in place of the previously-unsourced generic descriptions of
+"interface-spec," "resource-model," and "versioning-strategy." Zalando
+is chosen over Google AIP for this rulebook specifically because
+Zalando's guideline is the only one of the two candidates named in the
+approver's feedback that states an explicit, machine-checkable
+deprecation *header* mechanism (its `Deprecation` rule, §185–§186,
+built directly on RFC 8594's `Sunset` header) rather than leaving
+deprecation signaling to prose description — directly closing this
+proposal's second required gap (RFC 8594/Deprecation header) with the
+same canon adoption that closes the first (a named source), instead of
+requiring two separate citations from two different guideline
+families. Google AIP is recorded as the considered, rejected
+alternative below (Alternatives Considered, new #8).
+
+Per-facet rule citations, each now the named source each corresponding
+gate's check derives from and each `evidence-citation-gate` itself
+points to when asserting a facet's requirement is "standard practice":
+
+- **interface-spec** — Zalando §<i>Provide API Specification using
+  OpenAPI</i> (rule 101‑102): API contract MUST be described using
+  OpenAPI (or AsyncAPI for event-driven surfaces); machine-readable
+  and lintable. Same requirement `interface-spec-gate` already checked
+  by keyword-presence; now cited to its source rather than asserted
+  generically.
+- **resource-model** — Zalando's resource-naming rules (nouns not
+  verbs, plural collection names, consistent hierarchy) as the named
+  source for what `resource-model-gate` requires a record to state.
+- **versioning-strategy** — Zalando's API versioning rule (URI-path or
+  media-type versioning, semantic-versioning discipline for breaking
+  vs. non-breaking changes) as the named source for
+  `versioning-strategy-gate`'s "named mechanism + justification"
+  check.
+- **deprecation-plan** — Zalando's `Deprecation` rule, itself built on
+  **RFC 8594** (`Sunset` HTTP header field, RFC 8594 §3) plus Zalando's
+  companion `Deprecation` response header: a deprecated resource or
+  field MUST be marked with both headers, `Sunset` giving the
+  concrete removal date and `Deprecation` marking the deprecation
+  itself. `deprecation-plan-gate`'s check (below) is revised to require
+  a record name these two headers explicitly, not just "a concrete
+  window + migration path" in prose.
+
+The ADR-shape and evidence-citation-discipline methodologies (phase 1,
+`adr-section-gate` + `evidence-citation-gate`) are not themselves
+Zalando content — they were adopted from issue #1's own text, not from
+an external API-style guideline — but `evidence-citation-gate`'s own
+required-source discipline is now satisfied for the API-First facets
+by pointing every "this is standard practice" claim about those facets
+at this Zalando citation, rather than leaving each facet's normativity
+unsourced. Where this document itself asserts a facet is Zalando-derived
+(the four bullets above), that assertion is the evidence-citation
+discipline's own required source token — applied to this proposal
+document as reflexively as it is required of future proposals.
+
 ## Context
 
 Issue #1 adopted **two distinct methodologies** for this role, not one:
@@ -165,10 +252,10 @@ required-deliverable inventory.
 |---|---|---|---|---|
 | 1 | `adr-section-gate` | ADR shape (issue #1 phase-1 proposal norm) | Presence + non-empty body of all 5 ADR headings: context, decision, alternatives considered, rationale, consequences | 기획서 norm — AND with #2 — `docs/issue-<n>/proposals/*api-design*.md` |
 | 2 | `evidence-citation-gate` | Evidence-citation discipline (issue #1 phase-1 proposal norm) | Any sentence matching a "standard/common/established practice" claim pattern must be accompanied by a named source token (guideline name, RFC number, or named prior-art API) within the same paragraph | 기획서 norm — AND with #1 — `docs/issue-<n>/proposals/*api-design*.md` |
-| 3 | `interface-spec-gate` | Spec-as-artifact / API-First, interface-spec facet (issue #1 phase-2 deliverable norm) | `interface-spec` label present + a machine-readable-format cue nearby (openapi, asyncapi, protobuf, grpc, idl); no N/A form accepted | 산출물 norm — AND with #4, #5, #6 — `docs/issue-<n>/reports/api-design.md` |
-| 4 | `resource-model-gate` | Spec-as-artifact / API-First, resource-model facet | `resource-model` label present with non-empty stated hierarchy/naming convention | 산출물 norm — AND with #3, #5, #6 — `docs/issue-<n>/reports/api-design.md` |
-| 5 | `versioning-strategy-gate` | Spec-as-artifact / API-First, versioning-strategy facet | `versioning-strategy` label present; accepts a named mechanism + justification, or the explicit value "none — pre-v1" | 산출물 norm — AND with #3, #4, #6 — `docs/issue-<n>/reports/api-design.md` |
-| 6 | `deprecation-plan-gate` | Spec-as-artifact / API-First, deprecation-plan facet | `deprecation-plan` label present; accepts a concrete window + migration path, or the explicit value "N/A — net new, nothing deprecated" | 산출물 norm — AND with #3, #4, #5 — `docs/issue-<n>/reports/api-design.md` |
+| 3 | `interface-spec-gate` | Spec-as-artifact / API-First, interface-spec facet — sourced to Zalando RESTful API Guidelines, "Provide API Specification using OpenAPI" (rules 101–102) | `interface-spec` label present + a machine-readable-format cue nearby (openapi, asyncapi, protobuf, grpc, idl); no N/A form accepted | 산출물 norm — AND with #4, #5, #6 — `docs/issue-<n>/reports/api-design.md` |
+| 4 | `resource-model-gate` | Spec-as-artifact / API-First, resource-model facet — sourced to Zalando's resource-naming rules (nouns not verbs, plural collections, consistent hierarchy) | `resource-model` label present with non-empty stated hierarchy/naming convention | 산출물 norm — AND with #3, #5, #6 — `docs/issue-<n>/reports/api-design.md` |
+| 5 | `versioning-strategy-gate` | Spec-as-artifact / API-First, versioning-strategy facet — sourced to Zalando's API-versioning rule (URI-path/media-type versioning, semantic-versioning discipline) | `versioning-strategy` label present; accepts a named mechanism + justification, or the explicit value "none — pre-v1" | 산출물 norm — AND with #3, #4, #6 — `docs/issue-<n>/reports/api-design.md` |
+| 6 | `deprecation-plan-gate` | Spec-as-artifact / API-First, deprecation-plan facet — sourced to Zalando's `Deprecation` rule, built on **RFC 8594** (`Sunset` header) + Zalando's `Deprecation` response header | `deprecation-plan` label present; accepts a stated `Sunset` header date + `Deprecation` header commitment + migration path, or the explicit value "N/A — net new, nothing deprecated" | 산출물 norm — AND with #3, #4, #5 — `docs/issue-<n>/reports/api-design.md` |
 
 Every row is required; none of the six plugins is optional to the
 proposal (though each is independently switchable at runtime via its
@@ -236,14 +323,24 @@ at phase-2 record time)
 - Prohibition: never silently omit — "none — pre-v1" must be stated
   explicitly, not left untouched.
 
-**deprecation-plan** (owned by `deprecation-plan-gate`)
-- Step: state, in Consequences, a concrete notice-window +
-  migration-path commitment, or "N/A — net new, nothing deprecated".
-- Judgment criterion: a stated window must be a concrete duration; a
-  migration path must name what consumers do.
+**deprecation-plan** (owned by `deprecation-plan-gate`, sourced to
+Zalando's `Deprecation` rule built on **RFC 8594**)
+- Step: state, in Consequences, the concrete `Sunset` header date (RFC
+  8594 §3 — the resource's actual removal date) and the `Deprecation`
+  header commitment (Zalando's companion header marking the resource
+  as deprecated from a stated date) plus a migration path, or "N/A —
+  net new, nothing deprecated".
+- Judgment criterion: the `Sunset` date must be a concrete calendar
+  date (not a vague duration like "eventually"); the migration path
+  must name what consumers do; a plan naming neither header by name is
+  rejected even if it describes an equivalent window in prose, because
+  the adopted canon requires the header mechanism itself, not just an
+  end-state.
 - Prohibition: do not reuse boilerplate deprecation prose unadapted to
   the actual surface (a gate can check presence, not honesty — a
-  human-review responsibility the plugin cannot substitute for).
+  human-review responsibility the plugin cannot substitute for); do
+  not describe a deprecation window without naming the `Sunset`/
+  `Deprecation` headers that carry it.
 
 ### Phase 2 (owned by the four facet plugins, each checking its own record-time delivery)
 
@@ -274,13 +371,17 @@ at phase-2 record time)
   interface-spec artifact where feasible.
 
 **deprecation-plan** (`deprecation-plan-gate`)
-- Step: restate the concrete window and migration path (or confirm
-  "N/A — net new"), and confirm the migration path is reflected in the
-  interface-spec artifact where applicable.
+- Step: restate the concrete `Sunset` date and `Deprecation` header
+  commitment and migration path (or confirm "N/A — net new"), and
+  confirm the attached interface-spec artifact actually declares both
+  headers on the deprecated operation/field where applicable.
 - Judgment criterion: as phase 1, plus consistency with the attached
-  spec artifact.
+  spec artifact — the spec's declared `Sunset`/`Deprecation` headers
+  must match the dates and commitment stated in the record text.
 - Prohibition: do not deliver a record whose deprecation-plan
-  contradicts what the attached spec artifact encodes.
+  contradicts what the attached spec artifact encodes; do not state a
+  deprecation without both named headers appearing in the spec
+  artifact.
 
 ## Alternatives considered
 
@@ -330,7 +431,22 @@ at phase-2 record time)
    enforced by the PR/Approve mechanism, contract v3 s19; duplicating
    it as file-based state inside any of the six plugins would add
    surface, not enforcement.
-7. **A checklist/agent file for a repeated procedure.** Considered and
+7. **Google AIP (aip.dev) as the adopted canon, instead of Zalando.**
+   Considered per the approver's feedback, which named both as
+   acceptable. Rejected in favor of Zalando specifically because this
+   proposal must also close the feedback's second, independent
+   requirement (RFC 8594/Deprecation header named explicitly): Google
+   AIP's deprecation guidance (AIP-181) is stated as narrative
+   process guidance without mandating a specific HTTP header
+   mechanism, whereas Zalando's `Deprecation` rule is built directly
+   on RFC 8594's `Sunset` header plus its own `Deprecation` response
+   header — adopting Zalando lets one canon citation satisfy both
+   parts of the feedback instead of requiring a second, separate
+   citation (e.g. "AIP for everything else, RFC 8594 bolted on
+   separately for deprecation only"), which would reproduce exactly
+   the unsourced-facet problem the feedback flagged, just split across
+   two source documents instead of zero.
+8. **A checklist/agent file for a repeated procedure.** Considered and
    rejected as unnecessary for this iteration: none of the six
    methodologies decomposes into a *multi-step operational procedure* a
    human or agent repeats across invocations distinct from "state this
@@ -395,6 +511,18 @@ at phase-2 record time)
   into six plugins does not change any of these three prior
   conclusions, since each plugin still checks content living entirely
   inside the single file it gates.
+- **Zalando RESTful API Guidelines named as canon, not a generic
+  "industry practice" description, because the domain review flagged
+  exactly that omission.** The four API-First facet plugins previously
+  described what each facet checks without naming where that
+  requirement comes from — the review's WEAK verdict is a direct
+  instance of `evidence-citation-gate`'s own rule ("this is standard
+  practice" claims need a named source) applied to this proposal
+  document itself. Naming Zalando resolves it for all four facets at
+  once, and Zalando's own RFC-8594-based `Deprecation` rule resolves
+  the deprecation-specific header requirement without a second,
+  separate citation (see Alternatives Considered #7 for why Zalando
+  was chosen over Google AIP specifically for this reason).
 
 ## Consequences
 
@@ -496,8 +624,11 @@ Per-plugin specifics:
    a named mechanism + justification, or "none — pre-v1".
 6. **`deprecation-plan-gate`** — same scope regex as #3, registered
    independently. Checks: `deprecation-plan` label present; accepts a
-   concrete window + migration path, or "N/A — net new, nothing
-   deprecated".
+   stated `Sunset` header date (RFC 8594 §3) + `Deprecation` header
+   commitment (Zalando) + migration path, or "N/A — net new, nothing
+   deprecated". Content check looks for the literal tokens `Sunset`
+   and `Deprecation` (case-insensitive header-name match) alongside a
+   date, not just prose describing a window.
 
 Design notes carried over from the scout-brief's must-bes, applying to
 every one of the six plugins independently: fail-closed on any
