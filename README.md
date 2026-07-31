@@ -20,14 +20,19 @@ claude plugin install api-design
 ## Layout
 
 - `api-design/.claude-plugin/plugin.json` — plugin manifest
-- `api-design/hooks/hooks.json` — SessionStart + PreToolUse wiring
-- `api-design/hooks/directive.sh` — SessionStart role directive
-- `api-design/hooks/record-fields-gate.sh` — this role's record required-field gate
-- `api-design/hooks/trailer-gate.sh` — commit `Subject: issue-<n>` trailer gate
-- `api-design/hooks/handbook-trigger-gate.sh` — s21 handbook-sync gate
-- `api-design/agents/warrant-hunter.md` — rotating-stance hunt agent
+- `api-design/hooks/hooks.json` — SessionStart wiring
+- `api-design/hooks/directive.sh` — SessionStart role directive; a stub
+  sourcing core canon's `core/hooks/lib/role-directive.sh`
+  (`core_role_directive`) with this role's four unique values
 - `docs/specs/approvers.md` — Approve-authority allowlist (see below)
 
-This is scaffolding, not a finished rulebook: fill in doctrine detail,
-handoff enforcement, and any role-specific progress gate before treating
-it as load-bearing.
+This role no longer vendors its own copies of the record-fields gate,
+trailer gate, handbook-trigger gate, or the warrant-hunter agent — core
+canon now provides all four directly (core issues #63/#66): the three
+role-agnostic `PreToolUse` gates are registered globally by core's own
+`hooks.json`, and the warrant-hunt plugin (`warrant/`) runs unparameterized
+per-repo. This role's decision-boundary and hand-off content lives only in
+`directive.sh` now.
+
+This is scaffolding, not a finished rulebook: fill in doctrine detail and
+handoff enforcement before treating it as load-bearing.
