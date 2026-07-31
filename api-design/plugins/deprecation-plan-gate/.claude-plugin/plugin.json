@@ -1,0 +1,5 @@
+{
+  "name": "deprecation-plan-gate",
+  "description": "Enforces the API-First deliverable norm's deprecation-plan facet on api-design phase-2 records: named Sunset (RFC 8594 §3) + Deprecation (Zalando) HTTP headers with a concrete date, or explicit 'N/A — net new'.",
+  "author": { "name": "Jung Jiwon & Lee Jongkwan" }
+}

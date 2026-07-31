@@ -8,6 +8,36 @@
       "name": "api-design",
       "source": "./api-design",
       "description": "The api-design role on contract v3 (issue-160 round-3 promotion). Decides: 서비스 경계의 인터페이스 형태."
+    },
+    {
+      "name": "adr-section-gate",
+      "source": "./api-design/plugins/adr-section-gate",
+      "description": "issue #7: enforces the ADR-shaped proposal norm (issue #1) on api-design phase-1 proposals — context/decision/alternatives considered/rationale/consequences all present and non-empty."
+    },
+    {
+      "name": "evidence-citation-gate",
+      "source": "./api-design/plugins/evidence-citation-gate",
+      "description": "issue #7: enforces the evidence-citation discipline (issue #1) on api-design phase-1 proposals — every standard/common/established-practice claim must name a source in the same paragraph."
+    },
+    {
+      "name": "interface-spec-gate",
+      "source": "./api-design/plugins/interface-spec-gate",
+      "description": "issue #7: enforces the API-First deliverable norm's interface-spec facet on api-design phase-2 records, per Zalando RESTful API Guidelines rules 101-102 (Provide API Specification using OpenAPI)."
+    },
+    {
+      "name": "resource-model-gate",
+      "source": "./api-design/plugins/resource-model-gate",
+      "description": "issue #7: enforces the API-First deliverable norm's resource-model facet on api-design phase-2 records, per Zalando's resource-naming rules (nouns not verbs, plural collections, consistent hierarchy)."
+    },
+    {
+      "name": "versioning-strategy-gate",
+      "source": "./api-design/plugins/versioning-strategy-gate",
+      "description": "issue #7: enforces the API-First deliverable norm's versioning-strategy facet on api-design phase-2 records, per Zalando's API-versioning rule (URI-path/media-type versioning, semver discipline)."
+    },
+    {
+      "name": "deprecation-plan-gate",
+      "source": "./api-design/plugins/deprecation-plan-gate",
+      "description": "issue #7: enforces the API-First deliverable norm's deprecation-plan facet on api-design phase-2 records, per Zalando's Deprecation rule built on RFC 8594 §3 (Sunset header) + Zalando's Deprecation header."
     }
   ]
 }

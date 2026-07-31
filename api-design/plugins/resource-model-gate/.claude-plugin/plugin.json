@@ -1,0 +1,5 @@
+{
+  "name": "resource-model-gate",
+  "description": "Enforces the API-First deliverable norm's resource-model facet on api-design phase-2 records: resource hierarchy + naming convention stated, per Zalando's resource-naming rules (nouns not verbs, plural collections, consistent hierarchy).",
+  "author": { "name": "Jung Jiwon & Lee Jongkwan" }
+}
