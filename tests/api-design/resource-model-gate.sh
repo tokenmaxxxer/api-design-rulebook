@@ -137,6 +137,150 @@ run_case "7 Edit with non-matching old_string" 2 "$payload7"
 payload8='{not valid json at all'
 run_case "8 malformed non-JSON stdin" 2 "$payload8"
 
+# ---------------------------------------------------------------------------
+# Case 9: Edit with replace_all:true against old_string occurring twice ->
+# both occurrences replaced, so the second (spurious) resource-model label
+# is also rewritten and the remaining one still satisfies the check -> exit 0
+# ---------------------------------------------------------------------------
+target9="$WORKDIR/docs/issue-9/reports/api-design.md"
+cat > "$target9" <<'EOF'
+# API Design
+
+resource-model: /widgets (plural noun collections), /widgets/{id} nested, consistent hierarchy
+
+placeholder
+
+## Other
+placeholder
+EOF
+old9_json="$(printf 'placeholder' | json_escape)"
+new9_json="$(printf 'X' | json_escape)"
+payload9=$(cat <<EOF
+{"tool_name":"Edit","tool_input":{"file_path":"docs/issue-9/reports/api-design.md","old_string":${old9_json},"new_string":${new9_json},"replace_all":true}}
+EOF
+)
+run_case "9 Edit replace_all:true replaces both occurrences" 0 "$payload9"
+
+# ---------------------------------------------------------------------------
+# Case 10: MultiEdit with 2 edits applied in sequence, second only succeeds
+# because the first already ran -> exit 0
+# ---------------------------------------------------------------------------
+cat > "$target9" <<'EOF'
+# API Design
+
+resource-model: STEP1
+EOF
+e1old_json="$(printf 'STEP1' | json_escape)"
+e1new_json="$(printf 'STEP2' | json_escape)"
+e2old_json="$(printf 'resource-model: STEP2' | json_escape)"
+e2new_json="$(printf 'resource-model: /orders (plural noun collections), /orders/{id} nested, consistent hierarchy' | json_escape)"
+payload10=$(cat <<EOF
+{"tool_name":"MultiEdit","tool_input":{"file_path":"docs/issue-9/reports/api-design.md","edits":[{"old_string":${e1old_json},"new_string":${e1new_json}},{"old_string":${e2old_json},"new_string":${e2new_json}}]}}
+EOF
+)
+run_case "10 MultiEdit sequential edits, later depends on earlier" 0 "$payload10"
+
+# ---------------------------------------------------------------------------
+# Case 11: MultiEdit, one edit replace_all:true on multiply-occurring string,
+# another edit replace_all:false/absent on a singly-occurring string, in the
+# same call -> both semantics honored independently -> exit 0
+# ---------------------------------------------------------------------------
+cat > "$target9" <<'EOF'
+# API Design
+
+resource-model: /items (plural noun collections), /items/{id} nested, consistent hierarchy
+
+DUPTOKEN more text DUPTOKEN
+
+SINGLETOKEN
+EOF
+e11a_old="$(printf 'DUPTOKEN' | json_escape)"
+e11a_new="$(printf 'DUP' | json_escape)"
+e11b_old="$(printf 'SINGLETOKEN' | json_escape)"
+e11b_new="$(printf 'SINGLE' | json_escape)"
+payload11=$(cat <<EOF
+{"tool_name":"MultiEdit","tool_input":{"file_path":"docs/issue-9/reports/api-design.md","edits":[{"old_string":${e11a_old},"new_string":${e11a_new},"replace_all":true},{"old_string":${e11b_old},"new_string":${e11b_new}}]}}
+EOF
+)
+run_case "11 MultiEdit mixed replace_all semantics honored independently" 0 "$payload11"
+
+# ---------------------------------------------------------------------------
+# Case 12: Edit with replace_all absent against multiply-occurring old_string
+# -> only first occurrence replaced (regression guard). The doc's
+# resource-model statement itself contains the duplicated token as its only
+# content, so replacing only the first occurrence leaves the label's body
+# still non-empty (min length is trivially met either way); use a case where
+# only-first-replaced leaves the label body too short while full-replace
+# would not, to assert the semantics.
+# ---------------------------------------------------------------------------
+cat > "$target9" <<'EOF'
+# API Design
+
+resource-model: X X
+EOF
+old12_json="$(printf 'X' | json_escape)"
+new12_json="$(printf '' | json_escape)"
+payload12=$(cat <<EOF
+{"tool_name":"Edit","tool_input":{"file_path":"docs/issue-9/reports/api-design.md","old_string":${old12_json},"new_string":${new12_json}}}
+EOF
+)
+# after first-only replace: "resource-model:  X" (11 chars stripped body "X" after label+space) -> body len <=10? " X" stripped -> "X" len 1 <=10 -> deny (exit 2)
+run_case "12 Edit replace_all absent replaces only first occurrence" 2 "$payload12"
+
+# ---------------------------------------------------------------------------
+# Case 13: Malformed JSON, valid JSON but not an object at top level -> exit 2
+# ---------------------------------------------------------------------------
+payload13='[1,2,3]'
+run_case "13 valid JSON array (not object) at top level" 2 "$payload13"
+
+# ---------------------------------------------------------------------------
+# Case 14: Empty stdin -> exit 2
+# ---------------------------------------------------------------------------
+run_case "14 empty stdin" 2 ""
+
+# ---------------------------------------------------------------------------
+# Case 15: kill switch UNSET explicitly (no RESOURCE_MODEL_GATE_OFF in env)
+# with content that fails the resource-model check -> exit 2
+# ---------------------------------------------------------------------------
+content15_json="$(printf 'no label here at all' | json_escape)"
+payload15=$(cat <<EOF
+{"tool_name":"Write","tool_input":{"file_path":"docs/issue-9/reports/api-design.md","content":${content15_json}}}
+EOF
+)
+run_case "15 kill switch unset stays active, failing content denied" 2 "$payload15"
+
+# ---------------------------------------------------------------------------
+# Case 16: kill switch set to garbage value e.g. banana, content fails check
+# -> exit 2 (must stay active)
+# ---------------------------------------------------------------------------
+run_case "16 kill switch garbage value stays active" 2 "$payload15" "RESOURCE_MODEL_GATE_OFF=banana"
+
+# ---------------------------------------------------------------------------
+# Case 17: repo-root-relative path (no $TMP prefix) with
+# CLAUDE_PROJECT_DIR=$WORKDIR -> identical scope-match decision as the
+# absolute-path case (Case 1 uses a repo-relative path already; this case
+# uses the absolute equivalent for comparison) -> exit 0
+# ---------------------------------------------------------------------------
+content17="# API Design
+
+resource-model: /accounts (plural noun collections), /accounts/{id} nested, consistent hierarchy
+"
+content17_json="$(printf '%s' "$content17" | json_escape)"
+payload17=$(cat <<EOF
+{"tool_name":"Write","tool_input":{"file_path":"$WORKDIR/docs/issue-9/reports/api-design.md","content":${content17_json}}}
+EOF
+)
+run_case "17 absolute path resolves to same scope decision as relative" 0 "$payload17"
+
+# ---------------------------------------------------------------------------
+# Case 18: same logical target with a leading ./ prefix -> identical result
+# ---------------------------------------------------------------------------
+payload18=$(cat <<EOF
+{"tool_name":"Write","tool_input":{"file_path":"./docs/issue-9/reports/api-design.md","content":${content17_json}}}
+EOF
+)
+run_case "18 leading ./ prefix resolves to same scope decision" 0 "$payload18"
+
 echo
 if [ "$FAILED" -eq 0 ]; then
   echo "All cases passed."

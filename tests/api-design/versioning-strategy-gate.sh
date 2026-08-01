@@ -50,11 +50,32 @@ print(json.dumps({"tool_name":"Write","tool_input":{"file_path":sys.argv[1],"con
 }
 
 json_edit() {
-  local path="$1" old="$2" new="$3"
+  local path="$1" old="$2" new="$3" replace_all="${4:-}"
   python3 -c '
 import json,sys
-print(json.dumps({"tool_name":"Edit","tool_input":{"file_path":sys.argv[1],"old_string":sys.argv[2],"new_string":sys.argv[3]}}))
-' "$path" "$old" "$new"
+ti = {"file_path":sys.argv[1],"old_string":sys.argv[2],"new_string":sys.argv[3]}
+if len(sys.argv) > 4 and sys.argv[4]:
+    ti["replace_all"] = sys.argv[4] == "true"
+print(json.dumps({"tool_name":"Edit","tool_input":ti}))
+' "$path" "$old" "$new" "$replace_all"
+}
+
+json_multiedit() {
+  # $1 = path, then repeated triples: old new replace_all("true"/"false"/"")
+  local path="$1"; shift
+  python3 -c '
+import json,sys
+path = sys.argv[1]
+rest = sys.argv[2:]
+edits = []
+for i in range(0, len(rest), 3):
+    o, n, ra = rest[i], rest[i+1], rest[i+2]
+    e = {"old_string": o, "new_string": n}
+    if ra:
+        e["replace_all"] = ra == "true"
+    edits.append(e)
+print(json.dumps({"tool_name":"MultiEdit","tool_input":{"file_path":path,"edits":edits}}))
+' "$path" "$@"
 }
 
 TARGET="$WORK/docs/issue-9/reports/api-design.md"
@@ -115,6 +136,119 @@ run_case "8 malformed-json-deny" "not valid json {{{" 2
 # Bonus case: label + explicit "none — pre-v1" -> allow
 c9_content="versioning-strategy: none — pre-v1, no public consumers yet"
 run_case "9 none-pre-v1-allow" "$(json_write "$TARGET" "$c9_content")" 0
+
+# Case 10: Edit with replace_all:true against a multiply-occurring old_string
+# -> assert BOTH occurrences replaced. old_string "TBD" occurs once BEFORE
+# the label (outside the label's check window) and once inside the
+# window (right after the label). A first-occurrence-only replace hits the
+# pre-label "TBD" and leaves the window's "TBD" untouched (deny); only
+# replace_all:true reaches the in-window occurrence too (allow). This
+# content flips pass/fail depending on whether both occurrences replace.
+c10_content="Prior note: schedule TBD.
+
+versioning-strategy: TBD"
+printf '%s' "$c10_content" > "$TARGET"
+run_case "10 edit-replace-all-both-occurrences" "$(json_edit "$TARGET" "TBD" "URI-path versioning" "true")" 0
+
+# Case 11: MultiEdit with 2+ sequential edits where a later edit only
+# succeeds because an earlier one already ran -> exit 0.
+c11_content="versioning-strategy: PLACEHOLDER"
+printf '%s' "$c11_content" > "$TARGET"
+run_case "11 multiedit-sequential-dependency" "$(json_multiedit "$TARGET" \
+  "PLACEHOLDER" "URI-path" "" \
+  "URI-path" "URI-path versioning (/v1/...)" "")" 0
+
+# Case 12: MultiEdit with mixed replace_all:true/false edits in one call ->
+# both honored independently. Edit 1 (replace_all:true) must replace BOTH
+# "XX" occurrences flanking the label to satisfy the window (the first "XX"
+# sits before the label, outside the window; the second sits inside it) —
+# if replace_all were ignored for edit 1, the in-window "XX" would remain
+# and the check would fail. Edit 2 (replace_all:false/absent) only needs
+# its single "YY" occurrence (inside the window) replaced with a second
+# unrelated mechanism-adjacent token to prove it still ran; a real
+# multi-occurrence "YY" case only-first-replaced would deny if the first
+# instance is outside the window.
+c12_content="Prior XX note.
+
+versioning-strategy: XX and YY here"
+printf '%s' "$c12_content" > "$TARGET"
+run_case "12 multiedit-mixed-replace-all" "$(json_multiedit "$TARGET" \
+  "XX" "URI-path versioning" "true" \
+  "YY" "reference" "false")" 0
+
+# Case 13: Edit with replace_all absent against multiply-occurring old_string
+# -> only first occurrence replaced (regression guard). "TBD" occurs twice;
+# replacing only the first leaves the second "TBD" but the label's own
+# window (right after "versioning-strategy:") gets the mechanism, so this
+# should still allow (mirrors real gate behavior: only nearby text matters).
+c13_content="versioning-strategy: TBD
+
+Notes: rollout plan TBD"
+printf '%s' "$c13_content" > "$TARGET"
+run_case "13 edit-replace-all-absent-first-occurrence-only" "$(json_edit "$TARGET" "TBD" "URI-path versioning")" 0
+
+# Case 13b: MultiEdit with replace_all:false explicit against multiply-occurring
+# old_string where only replacing the first occurrence fails the check ->
+# regression guard the other direction (label's own window untouched, mechanism
+# added far away doesn't count) -> deny.
+c13b_content="Notes: rollout plan TBD
+
+versioning-strategy: TBD"
+printf '%s' "$c13b_content" > "$TARGET"
+run_case "13b edit-first-occurrence-only-misses-label-window-deny" "$(json_edit "$TARGET" "TBD" "URI-path versioning" "false")" 2
+
+# Case 14: Malformed JSON, valid JSON but not object at top level -> exit 2
+run_case "14 json-array-not-object-deny" "[1,2,3]" 2
+
+# Case 15: Malformed JSON, empty stdin -> exit 2
+run_case "15 empty-stdin-deny" "" 2
+
+# Case 16: Kill switch UNSET explicitly with content that fails the check -> exit 2
+c16_content="versioning-strategy: we will figure this out later"
+actual_rc16=""
+out_f16="$WORK/.out16.$$"
+err_f16="$WORK/.err16.$$"
+set +e
+CLAUDE_PROJECT_DIR="$WORK" env -u VERSIONING_STRATEGY_GATE_OFF bash "$GATE" >"$out_f16" 2>"$err_f16" <<<"$(json_write "$TARGET" "$c16_content")"
+actual_rc16=$?
+set -e
+if [ "$actual_rc16" -eq 2 ]; then
+  echo "PASS: 16 kill-switch-unset-still-active (rc=2)"
+  pass_count=$((pass_count+1))
+else
+  echo "FAIL: 16 kill-switch-unset-still-active (expected rc=2, got rc=$actual_rc16)"
+  fail_count=$((fail_count+1))
+fi
+rm -f "$out_f16" "$err_f16"
+
+# Case 17: Kill switch garbage value e.g. VERSIONING_STRATEGY_GATE_OFF=banana
+# with failing content -> exit 2 (must stay active).
+actual_rc17=""
+out_f17="$WORK/.out17.$$"
+err_f17="$WORK/.err17.$$"
+set +e
+CLAUDE_PROJECT_DIR="$WORK" VERSIONING_STRATEGY_GATE_OFF=banana bash "$GATE" >"$out_f17" 2>"$err_f17" <<<"$(json_write "$TARGET" "$c16_content")"
+actual_rc17=$?
+set -e
+if [ "$actual_rc17" -eq 2 ]; then
+  echo "PASS: 17 kill-switch-garbage-value-stays-active (rc=2)"
+  pass_count=$((pass_count+1))
+else
+  echo "FAIL: 17 kill-switch-garbage-value-stays-active (expected rc=2, got rc=$actual_rc17)"
+  fail_count=$((fail_count+1))
+fi
+rm -f "$out_f17" "$err_f17"
+
+# Case 18: Same logical target as repo-root-relative path (no $WORK prefix)
+# with CLAUDE_PROJECT_DIR=$WORK -> identical scope-match decision as
+# absolute-path case (deny, since content lacks mechanism).
+rel_target="docs/issue-9/reports/api-design.md"
+printf '%s' "$c16_content" > "$WORK/$rel_target"
+run_case "18 relative-path-same-decision-as-absolute" "$(json_write "$rel_target" "$c16_content")" 2
+
+# Case 19: Same target with leading "./" prefix -> identical result.
+dotslash_target="./docs/issue-9/reports/api-design.md"
+run_case "19 dotslash-prefix-same-decision" "$(json_write "$dotslash_target" "$c16_content")" 2
 
 echo ""
 echo "Results: $pass_count passed, $fail_count failed"

@@ -38,6 +38,18 @@ export DEPRECATION_PLAN_GATE_OFF=1
 Any truthy value other than `""`, `0`, `false`, `no`, or `off` disables the
 gate entirely for the current process.
 
+## Core adoption
+
+This gate sources its fail-closed trap, kill-switch check, deny helper,
+JSON parsing, path normalization, and Write/Edit/MultiEdit reconstruction
+from core issue #72's `gate-lib.sh` / `gate-lib.py`, by reference
+(`CLAUDE_PLUGIN_ROOT_CORE`), rather than hand-rolling them locally:
+`gate_trap_fail_closed`, `gate_kill_switch_active`, `gate_deny`,
+`gate_parse_json_or_deny`, `gate_normalize_path`, and
+`gate_reconstruct_write`. The METHODOLOGY CHECK below — the
+deprecation-plan-specific Sunset/Deprecation/date/N/A logic — is not part
+of core and stays local to this plugin.
+
 ## Independence
 
 This plugin is independently complete: it does its own JSON payload parsing,

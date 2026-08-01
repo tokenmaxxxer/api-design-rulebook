@@ -51,6 +51,19 @@ content can't be determined), the gate denies — it never guesses.
 Set `VERSIONING_STRATEGY_GATE_OFF=1` (or any other truthy value) in the
 environment to bypass the gate entirely.
 
+## Core adoption
+
+`gate.sh` sources core's gate-house standard library (issue #72:
+`gate-lib.sh`/`gate-lib.py`) by path reference rather than hand-rolling
+the same machinery. It uses `gate_trap_fail_closed` for the fail-closed
+EXIT trap, `gate_kill_switch_active` for the kill-switch check,
+`gate_deny` for the stderr-refuse-and-exit-2 protocol, and, in the
+embedded Python judge, `gate_parse_json_or_deny` for malformed-payload
+handling, `gate_normalize_path` for root-relative path resolution, and
+`gate_reconstruct_write` for Write/Edit/MultiEdit content
+reconstruction. The library is referenced via `CLAUDE_PLUGIN_ROOT_CORE`
+(with a relative-path fallback) and is never vendored into this repo.
+
 ## Independence
 
 This gate is self-contained: it does not read, require, or interact with

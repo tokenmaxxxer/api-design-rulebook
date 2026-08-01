@@ -6,6 +6,9 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 GATE="$REPO_ROOT/api-design/plugins/adr-section-gate/hooks/gate.sh"
 
+# shellcheck source=lib/core-fixture.sh
+. "$REPO_ROOT/tests/api-design/lib/core-fixture.sh"
+
 TMPDIR_ROOT="$(mktemp -d)"
 cleanup() { rm -rf "$TMPDIR_ROOT"; }
 trap cleanup EXIT
@@ -229,6 +232,246 @@ printf '%s' "not valid json {{{" | CLAUDE_PROJECT_DIR="$REPO" bash "$GATE" >"$TM
 rc=$?
 [ "$rc" -eq 2 ] && ok=1 || ok=0
 report "case8: malformed non-JSON stdin -> exit 2" "$ok"
+
+# --- Case 9: Edit with replace_all:true against old_string occurring twice,
+# flips result from failing to passing (proves both occurrences replaced)
+TWO_TBD='## Context
+
+context text
+
+## Decision
+
+decision text
+
+## Alternatives Considered
+
+alternatives text
+
+## Rationale
+
+TBD
+
+## Consequences
+
+TBD
+'
+printf '%s' "$TWO_TBD" > "$REPO/docs/issue-9/proposals/api-design.md"
+old_json="$(printf 'TBD' | json_escape)"
+new_json="$(printf 'filled in with real content' | json_escape)"
+payload=$(python3 -c "
+import json
+print(json.dumps({
+  'tool_name': 'Edit',
+  'tool_input': {
+    'file_path': 'docs/issue-9/proposals/api-design.md',
+    'old_string': $old_json,
+    'new_string': $new_json,
+    'replace_all': True
+  }
+}))
+")
+run_gate "$payload" >"$TMPDIR_ROOT/case9.out" 2>"$TMPDIR_ROOT/case9.err"
+rc=$?
+[ "$rc" -eq 0 ] && ok=1 || ok=0
+report "case9: Edit replace_all:true, both TBDs replaced -> exit 0" "$ok"
+
+# --- Case 10: MultiEdit, 2 edits applied in sequence, second only makes
+# sense because first already ran -> exit 0
+SEQ_BASE='## Context
+
+context text
+
+## Decision
+
+decision text
+
+## Alternatives Considered
+
+alternatives text
+
+## Rationale
+
+STEP1_PLACEHOLDER
+
+## Consequences
+
+consequences text
+'
+printf '%s' "$SEQ_BASE" > "$REPO/docs/issue-9/proposals/api-design.md"
+o1_json="$(printf 'STEP1_PLACEHOLDER' | json_escape)"
+n1_json="$(printf 'STEP2_PLACEHOLDER' | json_escape)"
+o2_json="$(printf 'STEP2_PLACEHOLDER' | json_escape)"
+n2_json="$(printf 'final rationale text' | json_escape)"
+payload=$(python3 -c "
+import json
+print(json.dumps({
+  'tool_name': 'MultiEdit',
+  'tool_input': {
+    'file_path': 'docs/issue-9/proposals/api-design.md',
+    'edits': [
+      {'old_string': $o1_json, 'new_string': $n1_json},
+      {'old_string': $o2_json, 'new_string': $n2_json}
+    ]
+  }
+}))
+")
+run_gate "$payload" >"$TMPDIR_ROOT/case10.out" 2>"$TMPDIR_ROOT/case10.err"
+rc=$?
+[ "$rc" -eq 0 ] && ok=1 || ok=0
+report "case10: MultiEdit sequential edits (2nd depends on 1st) -> exit 0" "$ok"
+
+# --- Case 11: MultiEdit, one edit replace_all:true against multiply-
+# occurring string, another edit replace_all:false/absent against singly-
+# occurring string, in same call -> both semantics honored -> exit 0
+MIXED_BASE='## Context
+
+context text
+
+## Decision
+
+decision text
+
+## Alternatives Considered
+
+alternatives text
+
+## Rationale
+
+TBD and TBD again
+
+## Consequences
+
+SINGLE_MARK
+'
+printf '%s' "$MIXED_BASE" > "$REPO/docs/issue-9/proposals/api-design.md"
+o1_json="$(printf 'TBD' | json_escape)"
+n1_json="$(printf 'done' | json_escape)"
+o2_json="$(printf 'SINGLE_MARK' | json_escape)"
+n2_json="$(printf 'final consequences text' | json_escape)"
+payload=$(python3 -c "
+import json
+print(json.dumps({
+  'tool_name': 'MultiEdit',
+  'tool_input': {
+    'file_path': 'docs/issue-9/proposals/api-design.md',
+    'edits': [
+      {'old_string': $o1_json, 'new_string': $n1_json, 'replace_all': True},
+      {'old_string': $o2_json, 'new_string': $n2_json}
+    ]
+  }
+}))
+")
+run_gate "$payload" >"$TMPDIR_ROOT/case11.out" 2>"$TMPDIR_ROOT/case11.err"
+rc=$?
+[ "$rc" -eq 0 ] && ok=1 || ok=0
+report "case11: MultiEdit mixed replace_all true/false in one call -> exit 0" "$ok"
+
+# --- Case 12: Edit with replace_all absent/false against multiply-
+# occurring old_string -> only first occurrence replaced (regression
+# guard); resulting content still has an un-replaced TBD so the section
+# stays empty-ish/failing -> exit 2
+TWO_TBD_2='## Context
+
+context text
+
+## Decision
+
+decision text
+
+## Alternatives Considered
+
+alternatives text
+
+## Rationale
+
+TBD
+
+## Consequences
+
+TBD
+'
+printf '%s' "$TWO_TBD_2" > "$REPO/docs/issue-9/proposals/api-design.md"
+old_json="$(printf 'TBD' | json_escape)"
+new_json="$(printf '' | json_escape)"
+payload=$(python3 -c "
+import json
+print(json.dumps({
+  'tool_name': 'Edit',
+  'tool_input': {
+    'file_path': 'docs/issue-9/proposals/api-design.md',
+    'old_string': $old_json,
+    'new_string': $new_json
+  }
+}))
+")
+run_gate "$payload" >"$TMPDIR_ROOT/case12.out" 2>"$TMPDIR_ROOT/case12.err"
+rc=$?
+if [ "$rc" -eq 2 ] && grep -qi "rationale" "$TMPDIR_ROOT/case12.err" && ! grep -qi "consequences" "$TMPDIR_ROOT/case12.err"; then ok=1; else ok=0; fi
+report "case12: Edit replace_all absent, only first occurrence replaced -> exit 2 (only rationale empty, consequences untouched)" "$ok"
+
+# --- Case 13: malformed JSON, valid JSON but not an object at top level -> exit 2
+printf '%s' "[1,2,3]" | CLAUDE_PROJECT_DIR="$REPO" bash "$GATE" >"$TMPDIR_ROOT/case13.out" 2>"$TMPDIR_ROOT/case13.err"
+rc=$?
+[ "$rc" -eq 2 ] && ok=1 || ok=0
+report "case13: valid JSON, non-object top level ([1,2,3]) -> exit 2" "$ok"
+
+# --- Case 14: malformed JSON, empty stdin -> exit 2
+printf '' | CLAUDE_PROJECT_DIR="$REPO" bash "$GATE" >"$TMPDIR_ROOT/case14.out" 2>"$TMPDIR_ROOT/case14.err"
+rc=$?
+[ "$rc" -eq 2 ] && ok=1 || ok=0
+report "case14: empty stdin -> exit 2" "$ok"
+
+# --- Case 15: kill switch UNSET explicitly (no ADR_SECTION_GATE_OFF in env
+# at all), content fails ADR-section check -> exit 2 (gate stays active)
+payload=$(python3 -c "
+import json
+print(json.dumps({
+  'tool_name': 'Write',
+  'tool_input': {'file_path': 'docs/issue-9/proposals/api-design.md', 'content': '## Context\n\nonly context\n'}
+}))
+")
+env -u ADR_SECTION_GATE_OFF bash -c "printf '%s' \"\$1\" | CLAUDE_PROJECT_DIR=\"\$2\" bash \"\$3\"" _ "$payload" "$REPO" "$GATE" >"$TMPDIR_ROOT/case15.out" 2>"$TMPDIR_ROOT/case15.err"
+rc=$?
+[ "$rc" -eq 2 ] && ok=1 || ok=0
+report "case15: kill switch unset, failing content -> exit 2" "$ok"
+
+# --- Case 16: kill switch set to garbage/unrecognized value, content fails
+# check -> exit 2 (must stay active; regression test for fail-open bug)
+printf '%s' "$payload" | CLAUDE_PROJECT_DIR="$REPO" ADR_SECTION_GATE_OFF=banana bash "$GATE" >"$TMPDIR_ROOT/case16.out" 2>"$TMPDIR_ROOT/case16.err"
+rc=$?
+[ "$rc" -eq 2 ] && ok=1 || ok=0
+report "case16: kill switch garbage value 'banana', failing content -> exit 2 (stays active)" "$ok"
+
+# --- Case 17: same logical target expressed as repo-root-relative path
+# (no $TMP/$REPO prefix), CLAUDE_PROJECT_DIR=$REPO set -> resolves
+# identically to the existing absolute-path case (case 5's scenario, but
+# path style varies)
+content_json="$(printf '%s' "$MISSING_ALT" | json_escape)"
+payload=$(python3 -c "
+import json
+print(json.dumps({
+  'tool_name': 'Write',
+  'tool_input': {'file_path': 'docs/issue-9/proposals/api-design.md', 'content': $content_json}
+}))
+")
+run_gate "$payload" >"$TMPDIR_ROOT/case17.out" 2>"$TMPDIR_ROOT/case17.err"
+rc=$?
+if [ "$rc" -eq 2 ] && grep -qi "alternatives" "$TMPDIR_ROOT/case17.err"; then ok=1; else ok=0; fi
+report "case17: repo-root-relative path (no prefix) -> matches absolute-path scope decision" "$ok"
+
+# --- Case 18: same logical target expressed with a leading "./" prefix ->
+# resolves identically too
+payload=$(python3 -c "
+import json
+print(json.dumps({
+  'tool_name': 'Write',
+  'tool_input': {'file_path': './docs/issue-9/proposals/api-design.md', 'content': $content_json}
+}))
+")
+run_gate "$payload" >"$TMPDIR_ROOT/case18.out" 2>"$TMPDIR_ROOT/case18.err"
+rc=$?
+if [ "$rc" -eq 2 ] && grep -qi "alternatives" "$TMPDIR_ROOT/case18.err"; then ok=1; else ok=0; fi
+report "case18: leading ./ prefix path -> matches absolute-path scope decision" "$ok"
 
 echo ""
 echo "Summary: $pass_count passed, $fail_count failed"

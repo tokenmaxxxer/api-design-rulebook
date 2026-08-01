@@ -57,6 +57,17 @@ Set `RESOURCE_MODEL_GATE_OFF=1` (or any truthy-looking non-empty/non-"0"/
 non-"false"/non-"no"/non-"off" value) in the environment to bypass this gate
 entirely (exit 0 immediately, before any content is inspected).
 
+## Core adoption
+
+This gate sources core's `gate-lib.sh` and `gate-lib.py` (core issue #72's
+gate-house standard) by reference instead of hand-rolling its own
+fail-closed trap, kill-switch parsing, JSON-parse-or-deny, path-normalize,
+and Write/Edit/MultiEdit reconstruction logic. Functions used:
+`gate_trap_fail_closed`, `gate_kill_switch_active`, `gate_deny`,
+`gate_parse_json_or_deny`, `gate_normalize_path`, `gate_reconstruct_write`.
+The resource-model methodology check itself is unchanged and remains
+plugin-specific — gate-lib provides no equivalent for it.
+
 ## Independence
 
 This plugin is independently complete: it does not read, import, or depend
