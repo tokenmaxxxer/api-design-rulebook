@@ -13,7 +13,7 @@ if [ -z "$_gate_lib_core_root" ] || [ ! -f "$_gate_lib_core_root/hooks/lib/gate-
   echo "api-design/resource-model-gate: refused — CLAUDE_PLUGIN_ROOT_CORE is not set and no core checkout was found at the relative fallback path; cannot load gate-lib.sh. Set CLAUDE_PLUGIN_ROOT_CORE to the tokenmaxxxer-core plugin root." >&2
   exit 2
 fi
-. "$_gate_lib_core_root/hooks/lib/gate-lib.sh"
+. "$_gate_lib_core_root/hooks/lib/gate-lib.sh" || { echo "api-design/resource-model-gate: cannot source gate-lib.sh" >&2; exit 2; }
 gate_trap_fail_closed
 set -uo pipefail
 

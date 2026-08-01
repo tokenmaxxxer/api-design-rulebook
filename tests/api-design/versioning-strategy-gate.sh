@@ -250,6 +250,25 @@ run_case "18 relative-path-same-decision-as-absolute" "$(json_write "$rel_target
 dotslash_target="./docs/issue-9/reports/api-design.md"
 run_case "19 dotslash-prefix-same-decision" "$(json_write "$dotslash_target" "$c16_content")" 2
 
+# Case 20: CLAUDE_PLUGIN_ROOT_CORE points nowhere (missing-core, mirrors
+# core#75's own missing-core test) -> the guarded gate-lib.sh source must
+# deny, not silently allow -> exit 2.
+actual_rc20=""
+out_f20="$WORK/.out20.$$"
+err_f20="$WORK/.err20.$$"
+set +e
+CLAUDE_PROJECT_DIR="$WORK" CLAUDE_PLUGIN_ROOT_CORE="$WORK/no-such-core" bash "$GATE" >"$out_f20" 2>"$err_f20" <<<"$(json_write "$rel_target" "$c16_content")"
+actual_rc20=$?
+set -e
+if [ "$actual_rc20" -eq 2 ]; then
+  echo "PASS: 20 missing-core-CLAUDE_PLUGIN_ROOT_CORE-nowhere-denies (rc=2)"
+  pass_count=$((pass_count+1))
+else
+  echo "FAIL: 20 missing-core-CLAUDE_PLUGIN_ROOT_CORE-nowhere-denies (expected rc=2, got rc=$actual_rc20)"
+  fail_count=$((fail_count+1))
+fi
+rm -f "$out_f20" "$err_f20"
+
 echo ""
 echo "Results: $pass_count passed, $fail_count failed"
 if [ "$fail_count" -ne 0 ]; then

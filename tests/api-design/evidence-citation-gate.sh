@@ -281,6 +281,20 @@ PYEOF
 run_gate "$CASE20_PAYLOAD"
 if [ "$GATE_RC" -eq 2 ]; then pass "case 20: leading ./ prefix matches same scope decision"; else fail "case 20: expected exit 2, got $GATE_RC ($GATE_STDERR)"; fi
 
+# ---- Case 21: CLAUDE_PLUGIN_ROOT_CORE points nowhere (missing-core,
+# mirrors core#75's own missing-core test) -> the guarded gate-lib.sh
+# source must deny, not silently allow -> exit 2 ----
+CASE21_PAYLOAD=$(python3 - "$CASE19_REL" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+content = "This is common practice with no source at all."
+print(json.dumps({"tool_name": "Write", "tool_input": {"file_path": path, "content": content}}))
+PYEOF
+)
+GATE_STDERR="$(printf '%s' "$CASE21_PAYLOAD" | CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT_CORE="$TMP/no-such-core" bash "$GATE" 2>&1 1>/dev/null)"
+GATE_RC=$?
+if [ "$GATE_RC" -eq 2 ]; then pass "case 21: missing-core (CLAUDE_PLUGIN_ROOT_CORE nowhere) -> deny, not silent-allow"; else fail "case 21: expected exit 2, got $GATE_RC ($GATE_STDERR)"; fi
+
 echo
 if [ "$overall_fail" -ne 0 ]; then
   echo "OVERALL: FAIL"

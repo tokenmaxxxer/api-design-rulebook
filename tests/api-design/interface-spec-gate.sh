@@ -37,6 +37,10 @@ run_gate() {
   echo $?
 }
 
+json_escape() {
+  python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'
+}
+
 # Case 1: Write with label + cue -> exit 0
 target="$TMP/docs/issue-9/reports/api-design.md"
 content='# API Design\n\ninterface-spec: OpenAPI 3.1 document at specs/api.yaml\n'
@@ -247,6 +251,42 @@ print(json.dumps({'tool_name':'Write','tool_input':{'file_path':'$dot_target','c
 ")
 rc=$(run_gate "$payload")
 check "19: leading ./ prefix matches identical result" 0 "$rc"
+
+# Case 20: MultiEdit that leaves "interface-spec" as the file's LAST section
+# (no following heading) with a format cue placed far past the fixed
+# line-count cap -> the bounded window (issue-13 locality fix) must NOT
+# see it -> exit 2 (regression guard: before the fix this fell back to
+# "rest of document" and would have wrongly allowed).
+filler_lines=""
+i=0
+while [ "$i" -lt 60 ]; do
+  filler_lines="${filler_lines}filler line $i with no relevant content
+"
+  i=$((i + 1))
+done
+printf '%s\n%s' "# API Design" "TBD_SECTION" > "$target"
+n1_body="interface-spec
+no format named here yet
+${filler_lines}openapi 3.1 document at specs/api.yaml"
+o1_json="$(printf 'TBD_SECTION' | json_escape)"
+n1_json="$(printf '%s' "$n1_body" | json_escape)"
+target_json="$(printf '%s' "$target" | json_escape)"
+payload=$(cat <<EOF
+{"tool_name":"MultiEdit","tool_input":{"file_path":${target_json},"edits":[{"old_string":${o1_json},"new_string":${n1_json}}]}}
+EOF
+)
+rc=$(run_gate "$payload")
+check "20: MultiEdit, label is last section, format cue past fixed window cap -> exit 2 (locality fix)" 2 "$rc"
+
+# Case 21: CLAUDE_PLUGIN_ROOT_CORE points nowhere (missing-core, mirrors
+# core#75's own missing-core test) -> the guarded gate-lib.sh source must
+# deny, not silently allow -> exit 2
+payload=$(python3 -c "
+import json
+print(json.dumps({'tool_name':'Write','tool_input':{'file_path':'$target','content':'interface-spec: openapi 3.1 document at specs/api.yaml'}}))
+")
+rc=$(run_gate "$payload" env CLAUDE_PLUGIN_ROOT_CORE="$TMP/no-such-core")
+check "21: missing-core (CLAUDE_PLUGIN_ROOT_CORE nowhere) -> deny, not silent-allow" 2 "$rc"
 
 echo ""
 echo "Results: $pass_count passed, $fail_count failed"

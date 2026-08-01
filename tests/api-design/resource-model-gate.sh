@@ -281,6 +281,13 @@ EOF
 )
 run_case "18 leading ./ prefix resolves to same scope decision" 0 "$payload18"
 
+# ---------------------------------------------------------------------------
+# Case 19: CLAUDE_PLUGIN_ROOT_CORE points nowhere (missing-core, mirrors
+# core#75's own missing-core test) -> the guarded gate-lib.sh source must
+# deny, not silently allow -> exit 2
+# ---------------------------------------------------------------------------
+run_case "19 missing-core (CLAUDE_PLUGIN_ROOT_CORE nowhere) -> deny, not silent-allow" 2 "$payload15" "CLAUDE_PLUGIN_ROOT_CORE=$WORKDIR/no-such-core"
+
 echo
 if [ "$FAILED" -eq 0 ]; then
   echo "All cases passed."
