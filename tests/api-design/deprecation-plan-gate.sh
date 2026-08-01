@@ -290,6 +290,26 @@ EOF
 )
 run_case "19: leading ./ prefix -> allow (matches absolute-path case)" 0 "$payload19"
 
+# ---------------------------------------------------------------------------
+# Case 20: CLAUDE_PLUGIN_ROOT_CORE points nowhere (missing-core, mirrors
+# core#75's own missing-core test) -> the guarded gate-lib.sh source must
+# deny, not silently allow -> exit 2
+content20_json="$(printf 'deprecation-plan: N/A — net new' | json_escape)"
+payload20=$(cat <<EOF
+{"tool_name":"Write","tool_input":{"file_path":"docs/issue-9/reports/api-design.md","content":${content20_json}}}
+EOF
+)
+actual_out="$(printf '%s' "$payload20" | CLAUDE_PROJECT_DIR="$REPO" CLAUDE_PLUGIN_ROOT_CORE="$TMPROOT/no-such-core" bash "$GATE" 2>&1)"
+rc=$?
+if [ "$rc" -eq 2 ]; then
+  echo "PASS: 20: missing-core (CLAUDE_PLUGIN_ROOT_CORE nowhere) -> deny, not silent-allow"
+  pass=$((pass + 1))
+else
+  echo "FAIL: 20: missing-core (CLAUDE_PLUGIN_ROOT_CORE nowhere) -> deny, not silent-allow (expected exit 2, got $rc)"
+  echo "  output: $actual_out"
+  fail=$((fail + 1))
+fi
+
 echo
 echo "Results: $pass passed, $fail failed"
 if [ "$fail" -ne 0 ]; then

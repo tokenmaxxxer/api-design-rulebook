@@ -14,7 +14,7 @@ if [ -z "$_gate_lib_core_root" ] || [ ! -f "$_gate_lib_core_root/hooks/lib/gate-
   echo "api-design/interface-spec-gate: refused — CLAUDE_PLUGIN_ROOT_CORE is not set and no core checkout was found at the relative fallback path; cannot load gate-lib.sh. Set CLAUDE_PLUGIN_ROOT_CORE to the tokenmaxxxer-core plugin root." >&2
   exit 2
 fi
-. "$_gate_lib_core_root/hooks/lib/gate-lib.sh"
+. "$_gate_lib_core_root/hooks/lib/gate-lib.sh" || { echo "api-design/interface-spec-gate: cannot source gate-lib.sh" >&2; exit 2; }
 gate_trap_fail_closed
 set -uo pipefail
 
@@ -126,7 +126,15 @@ try:
     else:
         after = new_text[m.end():]
         next_heading = re.search(r'\n#{1,6}\s', after)
-        window = after[:next_heading.start()] if next_heading else after
+        if next_heading:
+            window = after[:next_heading.start()]
+        else:
+            # No following heading (interface-spec is the file's last
+            # section): bound the cue window to a fixed line-count cap
+            # instead of "rest of document" (issue-13 locality fix) so
+            # unrelated trailing content past the label's own section
+            # can never be read as its cue window.
+            window = "\n".join(after.split("\n")[:40])
         if not format_cue_re.search(window.lower()):
             missing.append("interface-spec (missing machine-readable format "
                             "cue near the label: openapi/asyncapi/protobuf/grpc/idl)")

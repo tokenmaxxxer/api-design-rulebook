@@ -473,6 +473,67 @@ rc=$?
 if [ "$rc" -eq 2 ] && grep -qi "alternatives" "$TMPDIR_ROOT/case18.err"; then ok=1; else ok=0; fi
 report "case18: leading ./ prefix path -> matches absolute-path scope decision" "$ok"
 
+# --- Case 19: MultiEdit, two edits each filling a DIFFERENT section's
+# placeholder in the same call (not sequentially dependent on each other,
+# unlike case 10/11) -> both sections end up non-empty -> exit 0
+CROSS_SECTION_BASE='## Context
+
+CONTEXT_PLACEHOLDER
+
+## Decision
+
+decision text
+
+## Alternatives Considered
+
+alternatives text
+
+## Rationale
+
+rationale text
+
+## Consequences
+
+CONSEQUENCES_PLACEHOLDER
+'
+printf '%s' "$CROSS_SECTION_BASE" > "$REPO/docs/issue-9/proposals/api-design.md"
+o1_json="$(printf 'CONTEXT_PLACEHOLDER' | json_escape)"
+n1_json="$(printf 'filled-in context text' | json_escape)"
+o2_json="$(printf 'CONSEQUENCES_PLACEHOLDER' | json_escape)"
+n2_json="$(printf 'filled-in consequences text' | json_escape)"
+payload=$(python3 -c "
+import json
+print(json.dumps({
+  'tool_name': 'MultiEdit',
+  'tool_input': {
+    'file_path': 'docs/issue-9/proposals/api-design.md',
+    'edits': [
+      {'old_string': $o1_json, 'new_string': $n1_json},
+      {'old_string': $o2_json, 'new_string': $n2_json}
+    ]
+  }
+}))
+")
+run_gate "$payload" >"$TMPDIR_ROOT/case19.out" 2>"$TMPDIR_ROOT/case19.err"
+rc=$?
+[ "$rc" -eq 0 ] && ok=1 || ok=0
+report "case19: MultiEdit, two edits filling two different sections in one call -> exit 0" "$ok"
+
+# --- Case 20: CLAUDE_PLUGIN_ROOT_CORE points nowhere (missing-core,
+# mirrors core#75's own missing-core test) -> the guarded gate-lib.sh
+# source must deny, not silently allow -> exit 2
+payload=$(python3 -c "
+import json
+print(json.dumps({
+  'tool_name': 'Write',
+  'tool_input': {'file_path': 'docs/issue-9/proposals/api-design.md', 'content': '## Context\n\nonly context\n'}
+}))
+")
+printf '%s' "$payload" | CLAUDE_PROJECT_DIR="$REPO" CLAUDE_PLUGIN_ROOT_CORE="$TMPDIR_ROOT/no-such-core" bash "$GATE" >"$TMPDIR_ROOT/case20.out" 2>"$TMPDIR_ROOT/case20.err"
+rc=$?
+[ "$rc" -eq 2 ] && ok=1 || ok=0
+report "case20: missing-core (CLAUDE_PLUGIN_ROOT_CORE nowhere) -> deny, not silent-allow" "$ok"
+
 echo ""
 echo "Summary: $pass_count passed, $fail_count failed"
 if [ "$fail_count" -ne 0 ]; then
