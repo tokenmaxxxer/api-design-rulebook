@@ -123,6 +123,131 @@ check "7: Edit old_string mismatch" 2 "$rc"
 rc=$(run_gate "this is not json at all {{{")
 check "8: malformed JSON stdin" 2 "$rc"
 
+# Case 9: locality regression - format cue in unrelated section, label section has no cue -> exit 2
+content9="# API Design
+
+## Some Other Section
+This uses openapi elsewhere in the document.
+
+## interface-spec
+Just a prose description with no format keyword here at all."
+payload=$(python3 -c "
+import json, sys
+content = '''$content9'''
+print(json.dumps({'tool_name':'Write','tool_input':{'file_path':'$target','content':content}}))
+")
+rc=$(run_gate "$payload")
+check "9: locality bug - format cue outside label section must not satisfy" 2 "$rc"
+grep -q "missing machine-readable format cue" "$TMP/err.log" && echo "  (reason confirmed: missing machine-readable format cue)"
+
+# Case 10: Edit with replace_all:true against multiply-occurring old_string -> both occurrences replaced
+printf '%s\n' "# API Design" "" "PLACEHOLDER" "" "interface-spec: PLACEHOLDER" > "$target"
+payload=$(python3 -c "
+import json
+print(json.dumps({
+  'tool_name':'Edit',
+  'tool_input':{
+    'file_path':'$target',
+    'old_string':'PLACEHOLDER',
+    'new_string':'openapi 3.1 spec at specs/api.yaml',
+    'replace_all': True
+  }
+}))
+")
+rc=$(run_gate "$payload")
+check "10: Edit replace_all true replaces all occurrences" 0 "$rc"
+
+# Case 11: MultiEdit where a later edit depends on text an earlier edit introduced -> exit 0
+printf '%s\n' "# API Design" "" "TBD" > "$target"
+payload=$(python3 -c "
+import json
+print(json.dumps({
+  'tool_name':'MultiEdit',
+  'tool_input':{
+    'file_path':'$target',
+    'edits':[
+      {'old_string':'TBD','new_string':'interface-spec: TBD_FORMAT'},
+      {'old_string':'TBD_FORMAT','new_string':'openapi 3.1 document at specs/api.yaml'}
+    ]
+  }
+}))
+")
+rc=$(run_gate "$payload")
+check "11: MultiEdit sequential dependency between edits" 0 "$rc"
+
+# Case 12: MultiEdit with mixed replace_all true/false honored independently
+printf '%s\n' "# API Design" "" "AAA BBB AAA BBB" "" "interface-spec: openapi 3.1" > "$target"
+payload=$(python3 -c "
+import json
+print(json.dumps({
+  'tool_name':'MultiEdit',
+  'tool_input':{
+    'file_path':'$target',
+    'edits':[
+      {'old_string':'AAA','new_string':'XXX','replace_all': True},
+      {'old_string':'BBB','new_string':'YYY','replace_all': False}
+    ]
+  }
+}))
+")
+rc=$(run_gate "$payload")
+check "12: MultiEdit mixed replace_all honored independently" 0 "$rc"
+grep -q "XXX BBB XXX BBB\|XXX YYY XXX BBB" "$target" 2>/dev/null || true
+
+# Case 13: Edit/MultiEdit with replace_all absent/false against multiply-occurring old_string -> only first replaced (regression guard)
+printf '%s\n' "# API Design" "" "interface-spec: PLACEHOLDER" "" "PLACEHOLDER" > "$target"
+payload=$(python3 -c "
+import json
+print(json.dumps({
+  'tool_name':'Edit',
+  'tool_input':{
+    'file_path':'$target',
+    'old_string':'PLACEHOLDER',
+    'new_string':'not a format word'
+  }
+}))
+")
+rc=$(run_gate "$payload")
+check "13: Edit replace_all absent replaces only first occurrence (still missing cue -> deny)" 2 "$rc"
+
+# Case 14: Malformed JSON - valid JSON but not object at top level -> exit 2
+rc=$(run_gate "[1,2,3]")
+check "14: JSON array at top level (not object)" 2 "$rc"
+
+# Case 15: Malformed JSON - empty stdin -> exit 2
+rc=$(run_gate "")
+check "15: empty stdin" 2 "$rc"
+
+# Case 16: kill switch UNSET explicitly, content fails check -> exit 2
+payload=$(python3 -c "
+import json
+print(json.dumps({'tool_name':'Write','tool_input':{'file_path':'$target','content':'interface-spec: no format here'}}))
+")
+rc=$(run_gate "$payload" env INTERFACE_SPEC_GATE_OFF=)
+check "16: kill switch unset, failing content denied" 2 "$rc"
+
+# Case 17: kill switch garbage value -> stays active -> exit 2
+rc=$(run_gate "$payload" env INTERFACE_SPEC_GATE_OFF=banana)
+check "17: kill switch garbage value stays active" 2 "$rc"
+
+# Case 18: repo-root-relative path (no TMP prefix) with CLAUDE_PROJECT_DIR=TMP -> same decision as absolute path
+rel_target="docs/issue-9/reports/api-design.md"
+payload=$(python3 -c "
+import json
+print(json.dumps({'tool_name':'Write','tool_input':{'file_path':'$rel_target','content':'interface-spec: openapi 3.1 document at specs/api.yaml'}}))
+")
+rc=$(run_gate "$payload")
+check "18: repo-root-relative path matches absolute-path scope decision" 0 "$rc"
+
+# Case 19: same target with leading ./ prefix -> identical result
+dot_target="./docs/issue-9/reports/api-design.md"
+payload=$(python3 -c "
+import json
+print(json.dumps({'tool_name':'Write','tool_input':{'file_path':'$dot_target','content':'interface-spec: openapi 3.1 document at specs/api.yaml'}}))
+")
+rc=$(run_gate "$payload")
+check "19: leading ./ prefix matches identical result" 0 "$rc"
+
 echo ""
 echo "Results: $pass_count passed, $fail_count failed"
 if [ "$fail_count" -gt 0 ]; then

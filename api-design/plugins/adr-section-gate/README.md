@@ -52,6 +52,18 @@ Set `ADR_SECTION_GATE_OFF=1` (or any truthy-looking non-empty/non-`0`/
 non-`false`/non-`no`/non-`off` value) in the environment to bypass this
 gate entirely.
 
+## Core adoption
+
+This gate sources `gate-lib.sh`/`gate-lib.py` (core issue #72's gate-house
+standard) by reference rather than hand-rolling its own fail-closed trap,
+kill-switch check, JSON parsing, path normalization, and
+Edit/MultiEdit/replace_all reconstruction. Specifically it uses
+`gate_trap_fail_closed`, `gate_kill_switch_active`, `gate_deny`,
+`gate_parse_json_or_deny`, `gate_normalize_path`, and
+`gate_reconstruct_write`. The gate never vendors a copy of either library;
+`CLAUDE_PLUGIN_ROOT_CORE` (or the relative fallback checkout path) must
+resolve to a real `gate-lib.sh` or the gate refuses to run.
+
 ## Independence
 
 This plugin is self-contained. It does not read, invoke, or depend on any

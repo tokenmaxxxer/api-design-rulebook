@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-__fc(){ rc=$?; if [ "$rc" != 0 ] && [ "$rc" != 2 ]; then echo "fail-closed: gate aborted (rc=$rc)" >&2; exit 2; fi; }
-trap __fc EXIT
 # PreToolUse gate (Write|Edit|MultiEdit) for the adr-section-gate plugin.
 # Methodology: ADR-shaped proposal norm (issue #1) — a phase-1 api-design
 # proposal must contain all 5 non-empty sections: context, decision,
@@ -9,15 +7,19 @@ trap __fc EXIT
 # allow/deny decision using only its own scope.
 # Scope: docs/issue-<n>/proposals/*api-design*.md
 # Kill switch: export ADR_SECTION_GATE_OFF=1
+_gate_lib_core_root="${CLAUDE_PLUGIN_ROOT_CORE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../core" 2>/dev/null && pwd -P)}"
+if [ -z "$_gate_lib_core_root" ] || [ ! -f "$_gate_lib_core_root/hooks/lib/gate-lib.sh" ]; then
+  echo "api-design/adr-section-gate: refused — CLAUDE_PLUGIN_ROOT_CORE is not set and no core checkout was found at the relative fallback path; cannot load gate-lib.sh. Set CLAUDE_PLUGIN_ROOT_CORE to the tokenmaxxxer-core plugin root." >&2
+  exit 2
+fi
+. "$_gate_lib_core_root/hooks/lib/gate-lib.sh"
+gate_trap_fail_closed
 set -uo pipefail
 
 role="api-design/adr-section-gate"
-deny() { echo "${role}: refused — $1" >&2; exit 2; }
+deny() { gate_deny "$role" "$1"; }
 
-case "${ADR_SECTION_GATE_OFF:-}" in
-  ""|0|false|no|off) ;;
-  *) exit 0 ;;
-esac
+gate_kill_switch_active "${ADR_SECTION_GATE_OFF:-}" || { trap - EXIT; exit 0; }
 
 command -v python3 >/dev/null 2>&1 || deny "gate.sh requires python3, which is not on PATH; denying rather than guessing."
 
@@ -51,17 +53,15 @@ python3 <<'PY'
 import sys as _fc_sys
 try:
     import json, os, posixpath, re, sys
+    import importlib.util
+    _spec = importlib.util.spec_from_file_location("gate_lib", os.environ["GATE_LIB_PY"])
+    gate_lib = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(gate_lib)
 
     def deny(m):
         sys.stderr.write("api-design/adr-section-gate: refused — %s\n" % m); sys.exit(2)
 
     raw = os.environ.get("GATE_PAYLOAD", "")
-    try:
-        ev = json.loads(raw) if raw else {}
-    except ValueError:
-        deny("the tool-call payload is not valid JSON; failing closed.")
-    if not isinstance(ev, dict):
-        deny("the tool-call payload is not a JSON object; failing closed.")
+    ev = gate_lib.gate_parse_json_or_deny(raw, deny)
 
     tool = ev.get("tool_name")
     ti = ev.get("tool_input")
@@ -72,13 +72,8 @@ try:
     SCOPE_RE = re.compile(r'^docs/issue-[0-9]+/proposals/.*api-design.*\.md$')
 
     def resolve(p):
-        n = p.replace("\\", "/")
-        a = n if posixpath.isabs(n) else posixpath.join(root, n)
-        a = posixpath.normpath(a)
-        try:
-            return posixpath.normpath(os.path.realpath(a).replace("\\", "/"))
-        except OSError:
-            return a
+        rel = gate_lib.gate_normalize_path(root, p)
+        return None if rel is None else posixpath.join(root, rel) if rel else root
 
     path = None
     if tool in ("Write", "Edit", "MultiEdit"):
@@ -88,44 +83,24 @@ try:
     if path is None:
         sys.exit(0)
 
-    r = resolve(path)
-    if not r.startswith(root + "/"):
+    rel = gate_lib.gate_normalize_path(root, path)
+    if rel is None:
         sys.exit(0)
-    rel = r[len(root):].lstrip("/")
     if not SCOPE_RE.match(rel):
         sys.exit(0)
+    abs_path = posixpath.join(root, rel)
 
     current = None
-    if os.path.isfile(r):
+    if os.path.isfile(abs_path):
         try:
-            with open(r, encoding="utf-8-sig") as fh:
+            with open(abs_path, encoding="utf-8-sig") as fh:
                 current = fh.read(1 << 20)
         except OSError:
             deny("%s exists but cannot be read; failing closed." % rel)
 
-    new_text = None
-    if tool == "Write":
-        c = ti.get("content")
-        if isinstance(c, str):
-            new_text = c
-    elif tool == "Edit":
-        o, n = ti.get("old_string"), ti.get("new_string")
-        if isinstance(o, str) and isinstance(n, str) and current is not None and o in current:
-            new_text = current.replace(o, n, 1)
-    elif tool == "MultiEdit":
-        edits = ti.get("edits")
-        text = current
-        if isinstance(edits, list) and text is not None:
-            ok = True
-            for e in edits:
-                if not isinstance(e, dict):
-                    ok = False; break
-                o, n = e.get("old_string"), e.get("new_string")
-                if not isinstance(o, str) or not isinstance(n, str) or o not in text:
-                    ok = False; break
-                text = text.replace(o, n, 1)
-            if ok:
-                new_text = text
+    new_text, _ok = gate_lib.gate_reconstruct_write(tool, ti, current)
+    if not _ok:
+        new_text = None
 
     if new_text is None:
         deny(

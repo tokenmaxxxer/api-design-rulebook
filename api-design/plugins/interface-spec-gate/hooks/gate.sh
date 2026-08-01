@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-__fc(){ rc=$?; if [ "$rc" != 0 ] && [ "$rc" != 2 ]; then echo "fail-closed: gate aborted (rc=$rc)" >&2; exit 2; fi; }
-trap __fc EXIT
 # PreToolUse gate (Write|Edit|MultiEdit) for the interface-spec-gate plugin.
 # Methodology: API-First deliverable norm, interface-spec facet — sourced to
 # Zalando RESTful API Guidelines "Provide API Specification using OpenAPI"
@@ -11,15 +9,19 @@ trap __fc EXIT
 # using only its own scope.
 # Scope: docs/issue-<n>/reports/api-design.md
 # Kill switch: export INTERFACE_SPEC_GATE_OFF=1
+_gate_lib_core_root="${CLAUDE_PLUGIN_ROOT_CORE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../core" 2>/dev/null && pwd -P)}"
+if [ -z "$_gate_lib_core_root" ] || [ ! -f "$_gate_lib_core_root/hooks/lib/gate-lib.sh" ]; then
+  echo "api-design/interface-spec-gate: refused — CLAUDE_PLUGIN_ROOT_CORE is not set and no core checkout was found at the relative fallback path; cannot load gate-lib.sh. Set CLAUDE_PLUGIN_ROOT_CORE to the tokenmaxxxer-core plugin root." >&2
+  exit 2
+fi
+. "$_gate_lib_core_root/hooks/lib/gate-lib.sh"
+gate_trap_fail_closed
 set -uo pipefail
 
 role="api-design/interface-spec-gate"
-deny() { echo "${role}: refused — $1" >&2; exit 2; }
+deny() { gate_deny "$role" "$1"; }
 
-case "${INTERFACE_SPEC_GATE_OFF:-}" in
-  ""|0|false|no|off) ;;
-  *) exit 0 ;;
-esac
+gate_kill_switch_active "${INTERFACE_SPEC_GATE_OFF:-}" || { trap - EXIT; exit 0; }
 
 command -v python3 >/dev/null 2>&1 || deny "gate.sh requires python3, which is not on PATH; denying rather than guessing."
 
@@ -48,22 +50,21 @@ fi
 [ -z "$root" ] && root="$(git -C "$(pwd -P)" rev-parse --show-toplevel 2>/dev/null || true)"
 [ -z "$root" ] && deny "no project root could be determined; failing closed."
 
-GATE_PAYLOAD="$payload" GATE_ROOT="$root" \
+GATE_PAYLOAD="$payload" GATE_ROOT="$root" GATE_LIB_PY="$_gate_lib_core_root/hooks/lib/gate-lib.py" \
 python3 <<'PY'
 import sys as _fc_sys
 try:
     import json, os, posixpath, re, sys
 
+    import importlib.util
+    _spec = importlib.util.spec_from_file_location("gate_lib", os.environ["GATE_LIB_PY"])
+    gate_lib = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(gate_lib)
+
     def deny(m):
         sys.stderr.write("api-design/interface-spec-gate: refused — %s\n" % m); sys.exit(2)
 
     raw = os.environ.get("GATE_PAYLOAD", "")
-    try:
-        ev = json.loads(raw) if raw else {}
-    except ValueError:
-        deny("the tool-call payload is not valid JSON; failing closed.")
-    if not isinstance(ev, dict):
-        deny("the tool-call payload is not a JSON object; failing closed.")
+    ev = gate_lib.gate_parse_json_or_deny(raw, deny)
 
     tool = ev.get("tool_name")
     ti = ev.get("tool_input")
@@ -74,13 +75,8 @@ try:
     SCOPE_RE = re.compile(r'^docs/issue-[0-9]+/reports/api-design\.md$')
 
     def resolve(p):
-        n = p.replace("\\", "/")
-        a = n if posixpath.isabs(n) else posixpath.join(root, n)
-        a = posixpath.normpath(a)
-        try:
-            return posixpath.normpath(os.path.realpath(a).replace("\\", "/"))
-        except OSError:
-            return a
+        rel = gate_lib.gate_normalize_path(root, p)
+        return None if rel is None else posixpath.join(root, rel) if rel else root
 
     path = None
     if tool in ("Write", "Edit", "MultiEdit"):
@@ -90,44 +86,24 @@ try:
     if path is None:
         sys.exit(0)
 
-    r = resolve(path)
-    if not r.startswith(root + "/"):
+    rel = gate_lib.gate_normalize_path(root, path)
+    if rel is None:
         sys.exit(0)
-    rel = r[len(root):].lstrip("/")
     if not SCOPE_RE.match(rel):
         sys.exit(0)
+    abs_path = posixpath.join(root, rel)
 
     current = None
-    if os.path.isfile(r):
+    if os.path.isfile(abs_path):
         try:
-            with open(r, encoding="utf-8-sig") as fh:
+            with open(abs_path, encoding="utf-8-sig") as fh:
                 current = fh.read(1 << 20)
         except OSError:
             deny("%s exists but cannot be read; failing closed." % rel)
 
-    new_text = None
-    if tool == "Write":
-        c = ti.get("content")
-        if isinstance(c, str):
-            new_text = c
-    elif tool == "Edit":
-        o, n = ti.get("old_string"), ti.get("new_string")
-        if isinstance(o, str) and isinstance(n, str) and current is not None and o in current:
-            new_text = current.replace(o, n, 1)
-    elif tool == "MultiEdit":
-        edits = ti.get("edits")
-        text = current
-        if isinstance(edits, list) and text is not None:
-            ok = True
-            for e in edits:
-                if not isinstance(e, dict):
-                    ok = False; break
-                o, n = e.get("old_string"), e.get("new_string")
-                if not isinstance(o, str) or not isinstance(n, str) or o not in text:
-                    ok = False; break
-                text = text.replace(o, n, 1)
-            if ok:
-                new_text = text
+    new_text, _ok = gate_lib.gate_reconstruct_write(tool, ti, current)
+    if not _ok:
+        new_text = None
 
     if new_text is None:
         deny(
@@ -138,32 +114,23 @@ try:
 
     low = new_text.lower()
     # METHODOLOGY CHECK: "interface-spec" label present AND a
-    # machine-readable-format cue present somewhere in the text. No N/A
+    # machine-readable-format cue present in the label's own section. No N/A
     # form accepted for this facet.
     missing = []
     label_re = re.compile(r'interface-spec')
     format_cue_re = re.compile(r'\b(openapi|asyncapi|protobuf|grpc|idl)\b')
 
-    if not label_re.search(low):
+    m = label_re.search(low)
+    if not m:
         missing.append("interface-spec (label absent)")
-    elif not format_cue_re.search(low):
-        missing.append("interface-spec (missing machine-readable format cue: openapi/asyncapi/protobuf/grpc/idl)")
     else:
-        # present-but-empty check: label immediately followed by another
-        # label-like heading or EOF with no format cue between label and
-        # next heading/EOF -- but since format_cue_re already matched
-        # somewhere in doc, also verify it's not purely coincidental to a
-        # totally separate section with nothing after the label itself.
-        # Minimal correct check: find label position; look at text after
-        # label up to next blank-line-separated heading or EOF; if that
-        # slice has zero format cue AND that slice is only whitespace or a
-        # lone heading line, still flag empty.
-        m = label_re.search(low)
         after = new_text[m.end():]
-        # find next markdown heading after the label
         next_heading = re.search(r'\n#{1,6}\s', after)
         window = after[:next_heading.start()] if next_heading else after
-        if not window.strip():
+        if not format_cue_re.search(window.lower()):
+            missing.append("interface-spec (missing machine-readable format "
+                            "cue near the label: openapi/asyncapi/protobuf/grpc/idl)")
+        elif not window.strip():
             missing.append("interface-spec (label present, body empty)")
 
     if missing:
