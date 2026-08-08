@@ -125,13 +125,23 @@ try:
         window_stripped = re.sub(r'^[\s:\-]*', '', window).strip()
         if len(window_stripped) <= 10:
             missing.append("resource-model (label present, body empty or too short)")
+        else:
+            # issue-17: additive strengthening — the resource-model section
+            # must also name an endpoint_path value and an HTTP method token
+            # from the spec's enum. Does not replace the hierarchy/naming
+            # check above; both must hold.
+            if not re.search(r'endpoint_path\s*:\s*/\S+', window):
+                missing.append("resource-model (missing endpoint_path: value)")
+            if not re.search(r'\bmethod\s*:\s*(GET|POST|PUT|PATCH|DELETE)\b', window):
+                missing.append("resource-model (missing method: GET/POST/PUT/PATCH/DELETE)")
 
     if missing:
         deny(
             "API-First deliverable norm's resource-model facet (Zalando's "
             "resource-naming rules: nouns not verbs, plural collection names, "
             "consistent hierarchy) requires the resource-model label with a "
-            "non-empty hierarchy/naming statement; missing: %s" % ", ".join(missing)
+            "non-empty hierarchy/naming statement, an endpoint_path: value, "
+            "and a method: token from GET/POST/PUT/PATCH/DELETE; missing: %s" % ", ".join(missing)
         )
     sys.exit(0)
 except Exception as _fc_e:

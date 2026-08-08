@@ -288,6 +288,51 @@ print(json.dumps({'tool_name':'Write','tool_input':{'file_path':'$target','conte
 rc=$(run_gate "$payload" env CLAUDE_PLUGIN_ROOT_CORE="$TMP/no-such-core")
 check "21: missing-core (CLAUDE_PLUGIN_ROOT_CORE nowhere) -> deny, not silent-allow" 2 "$rc"
 
+# Case 22 (issue-17): label present, no pre-existing cue, but an adjacent
+# openapi_version: field mention satisfies the additive cue -> exit 0
+payload=$(python3 -c "
+import json
+print(json.dumps({'tool_name':'Write','tool_input':{'file_path':'$target','content':'interface-spec: openapi_version: 3.1.0, see specs/api.yaml'}}))
+")
+rc=$(run_gate "$payload")
+check "22: openapi_version field mention satisfies additive cue" 0 "$rc"
+
+# Case 23 (issue-17): label present, no pre-existing cue, but an adjacent
+# spectral_ruleset_id: field mention satisfies the additive cue -> exit 0
+payload=$(python3 -c "
+import json
+print(json.dumps({'tool_name':'Write','tool_input':{'file_path':'$target','content':'interface-spec: spectral_ruleset_id: acme-api-ruleset, see specs/api.yaml'}}))
+")
+rc=$(run_gate "$payload")
+check "23: spectral_ruleset_id field mention satisfies additive cue" 0 "$rc"
+
+# Case 24 (issue-17 regression guard): label present, no cue of any kind
+# (pre-existing or additive) -> still exit 2, old behavior unchanged
+payload=$(python3 -c "
+import json
+print(json.dumps({'tool_name':'Write','tool_input':{'file_path':'$target','content':'interface-spec: described in prose only, no format or field named'}}))
+")
+rc=$(run_gate "$payload")
+check "24: no cue of any kind still denied (pre-existing behavior unchanged)" 2 "$rc"
+
+# Case 25 (issue-17 warrant-hunt finding, before-landing): openapi_version:
+# with a placeholder/N/A-equivalent value must NOT satisfy the additive
+# cue -> exit 2 (no N/A form accepted, per the gate's own stated rule)
+payload=$(python3 -c "
+import json
+print(json.dumps({'tool_name':'Write','tool_input':{'file_path':'$target','content':'interface-spec: openapi_version: not_specified'}}))
+")
+rc=$(run_gate "$payload")
+check "25: openapi_version placeholder value does not satisfy additive cue" 2 "$rc"
+
+# Case 26: same, for spectral_ruleset_id: with a placeholder value -> exit 2
+payload=$(python3 -c "
+import json
+print(json.dumps({'tool_name':'Write','tool_input':{'file_path':'$target','content':'interface-spec: spectral_ruleset_id: TBD'}}))
+")
+rc=$(run_gate "$payload")
+check "26: spectral_ruleset_id placeholder value does not satisfy additive cue" 2 "$rc"
+
 echo ""
 echo "Results: $pass_count passed, $fail_count failed"
 if [ "$fail_count" -gt 0 ]; then
