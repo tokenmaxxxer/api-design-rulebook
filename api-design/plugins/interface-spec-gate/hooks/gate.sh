@@ -118,7 +118,15 @@ try:
     # form accepted for this facet.
     missing = []
     label_re = re.compile(r'interface-spec')
-    format_cue_re = re.compile(r'\b(openapi|asyncapi|protobuf|grpc|idl)\b')
+    # issue-17: an adjacent openapi_version: or spectral_ruleset_id: field
+    # mention also satisfies the cue (additive to, never replacing, the
+    # pre-existing openapi/asyncapi/protobuf/grpc/idl cue check below).
+    _PLACEHOLDER_VALUES = r'(?:n/?a|tbd|none|null|unspecified|not[_-]specified|unknown)'
+    format_cue_re = re.compile(
+        r'\b(openapi|asyncapi|protobuf|grpc|idl)\b'
+        r'|\b(?:openapi_version|spectral_ruleset_id)\s*:\s*'
+        r'(?!' + _PLACEHOLDER_VALUES + r'\b)\S'
+    )
 
     m = label_re.search(low)
     if not m:

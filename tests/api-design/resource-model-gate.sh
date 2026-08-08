@@ -44,6 +44,8 @@ json_escape() {
 content1='# API Design
 
 resource-model: /users (plural noun collections), /users/{id} nested under user, consistent hierarchy
+endpoint_path: /users
+method: GET
 '
 content1_json="$(printf '%s' "$content1" | json_escape)"
 payload1=$(cat <<EOF
@@ -70,6 +72,8 @@ cat > "$target3" <<'EOF'
 # API Design
 
 resource-model: /orders (plural noun collections), /orders/{id} nested, consistent hierarchy
+endpoint_path: /orders
+method: GET
 
 ## Other Section
 placeholder
@@ -147,6 +151,8 @@ cat > "$target9" <<'EOF'
 # API Design
 
 resource-model: /widgets (plural noun collections), /widgets/{id} nested, consistent hierarchy
+endpoint_path: /widgets
+method: GET
 
 placeholder
 
@@ -173,7 +179,7 @@ EOF
 e1old_json="$(printf 'STEP1' | json_escape)"
 e1new_json="$(printf 'STEP2' | json_escape)"
 e2old_json="$(printf 'resource-model: STEP2' | json_escape)"
-e2new_json="$(printf 'resource-model: /orders (plural noun collections), /orders/{id} nested, consistent hierarchy' | json_escape)"
+e2new_json="$(printf 'resource-model: /orders (plural noun collections), /orders/{id} nested, consistent hierarchy\nendpoint_path: /orders\nmethod: GET' | json_escape)"
 payload10=$(cat <<EOF
 {"tool_name":"MultiEdit","tool_input":{"file_path":"docs/issue-9/reports/api-design.md","edits":[{"old_string":${e1old_json},"new_string":${e1new_json}},{"old_string":${e2old_json},"new_string":${e2new_json}}]}}
 EOF
@@ -189,6 +195,8 @@ cat > "$target9" <<'EOF'
 # API Design
 
 resource-model: /items (plural noun collections), /items/{id} nested, consistent hierarchy
+endpoint_path: /items
+method: GET
 
 DUPTOKEN more text DUPTOKEN
 
@@ -264,6 +272,8 @@ run_case "16 kill switch garbage value stays active" 2 "$payload15" "RESOURCE_MO
 content17="# API Design
 
 resource-model: /accounts (plural noun collections), /accounts/{id} nested, consistent hierarchy
+endpoint_path: /accounts
+method: GET
 "
 content17_json="$(printf '%s' "$content17" | json_escape)"
 payload17=$(cat <<EOF
@@ -287,6 +297,56 @@ run_case "18 leading ./ prefix resolves to same scope decision" 0 "$payload18"
 # deny, not silently allow -> exit 2
 # ---------------------------------------------------------------------------
 run_case "19 missing-core (CLAUDE_PLUGIN_ROOT_CORE nowhere) -> deny, not silent-allow" 2 "$payload15" "CLAUDE_PLUGIN_ROOT_CORE=$WORKDIR/no-such-core"
+
+# ---------------------------------------------------------------------------
+# Case 20 (issue-17): hierarchy/naming statement present and non-empty, but
+# endpoint_path: is missing -> exit 2 (additive check, not a replacement)
+# ---------------------------------------------------------------------------
+content20="# API Design
+
+resource-model: /widgets (plural noun collections), /widgets/{id} nested, consistent hierarchy
+method: GET
+"
+content20_json="$(printf '%s' "$content20" | json_escape)"
+payload20=$(cat <<EOF
+{"tool_name":"Write","tool_input":{"file_path":"docs/issue-9/reports/api-design.md","content":${content20_json}}}
+EOF
+)
+run_case "20 (issue-17) hierarchy present, endpoint_path missing -> deny" 2 "$payload20"
+
+# ---------------------------------------------------------------------------
+# Case 21 (issue-17): hierarchy/naming statement present and non-empty, and
+# endpoint_path: present, but method: is missing or not from the enum ->
+# exit 2 (additive check, not a replacement)
+# ---------------------------------------------------------------------------
+content21="# API Design
+
+resource-model: /widgets (plural noun collections), /widgets/{id} nested, consistent hierarchy
+endpoint_path: /widgets
+"
+content21_json="$(printf '%s' "$content21" | json_escape)"
+payload21=$(cat <<EOF
+{"tool_name":"Write","tool_input":{"file_path":"docs/issue-9/reports/api-design.md","content":${content21_json}}}
+EOF
+)
+run_case "21 (issue-17) endpoint_path present, method missing -> deny" 2 "$payload21"
+
+# ---------------------------------------------------------------------------
+# Case 22 (issue-17): hierarchy/naming, endpoint_path, and a method token
+# from the spec's enum all present -> exit 0
+# ---------------------------------------------------------------------------
+content22="# API Design
+
+resource-model: /widgets (plural noun collections), /widgets/{id} nested, consistent hierarchy
+endpoint_path: /widgets
+method: POST
+"
+content22_json="$(printf '%s' "$content22" | json_escape)"
+payload22=$(cat <<EOF
+{"tool_name":"Write","tool_input":{"file_path":"docs/issue-9/reports/api-design.md","content":${content22_json}}}
+EOF
+)
+run_case "22 (issue-17) hierarchy + endpoint_path + method all present -> allow" 0 "$payload22"
 
 echo
 if [ "$FAILED" -eq 0 ]; then
