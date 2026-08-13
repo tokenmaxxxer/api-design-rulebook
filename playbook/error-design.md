@@ -1,0 +1,34 @@
+---
+axis: error-design
+rule_count_floor: 10
+---
+
+# Error response design
+
+Research trail: RFC 9457 (Problem Details for HTTP APIs, primary source, obsoletes RFC 7807), Stripe API error/idempotency docs, Microsoft REST API Guidelines, Zalando RESTful API Guidelines, Google AIP-193 (Errors), and HCI literature on programming error-message readability. The academic layer is thin — usability/HCI research on error messages exists but is sparse and mostly qualitative, as noted below.
+
+## Rules
+
+1. When designing the base error envelope for a JSON HTTP API, use the RFC 9457 `application/problem+json` shape (`type`, `title`, `status`, `detail`, `instance`) rather than inventing a bespoke `{success: false, ...}` wrapper — all fields are optional but each has defined semantics, so adopting the standard gets you interoperable tooling and documented client behavior for free. source: https://www.rfc-editor.org/rfc/rfc9457.html
+
+2. When a client needs to branch program logic on error type, include a stable machine-readable identifier (RFC 9457 `type` URI, or a `code`/`reason` string as in Stripe's `error.type`/`error.code` or Google AIP-193's `(domain, reason)` pair) rather than requiring clients to switch on HTTP status codes or parse the human-readable message — HTTP status alone is too coarse-grained (e.g., 400 covers many distinct causes) and AIP-193 explicitly makes `ErrorInfo` the "canonical machine-readable identity for an API error" for this reason. source: https://google.aip.dev/193
+
+3. When a single request fails validation on multiple fields, return a structured list of per-field errors (RFC 9457's `errors` extension array with `detail`+`pointer`, or the equivalent `invalid_params` array with `name`+`reason`) rather than a single flat error message, so clients can render all field-level failures in one round trip instead of fixing and resubmitting one field at a time. source: https://www.rfc-editor.org/rfc/rfc9457.html
+
+4. When defining error codes across services, namespace them (Google AIP-193's `domain` + `reason`, or Microsoft's nested `innererror` hierarchy) rather than a single flat global enum — this lets new, more specific codes be introduced anywhere in the hierarchy over time "without breaking backwards compatibility, so long as old error codes still appear." source: https://github.com/microsoft/api-guidelines/blob/vNext/graph/articles/errorResponses.md
+
+5. When writing the human-readable `detail`/`message` field, keep it a developer-facing explanation of the specific occurrence and not a source of machine-parsed information — RFC 9457 states "consumers should not parse the detail member for information; extensions are more suitable and less error-prone ways to obtain such information" — so treat `detail` as prose for humans, and put anything a client needs to branch on into a typed extension field instead. source: https://www.rfc-editor.org/rfc/rfc9457.html
+
+6. When populating `title`, keep it a fixed string per error type that "should not change from occurrence to occurrence... except for localization," and put anything instance-specific in `detail` — mixing per-instance data into `title` breaks client-side error grouping/deduplication that assumes `title` is stable. source: https://www.rfc-editor.org/rfc/rfc9457.html
+
+7. **REMOVAL**: When generating any error response destined for an external client, strip stack traces, internal file paths, SQL fragments, and other implementation details from the payload — RFC 9457 explicitly warns generators to "avoid making implementation details such as a stack dump available through the HTTP interface, since this can expose sensitive details of the server implementation, its data, and so on," and AIP-193 similarly requires messages to "not assume that the user will know anything about its underlying implementation." source: https://www.rfc-editor.org/rfc/rfc9457.html
+
+8. **REMOVAL**: When an error can be retried by the client, do not bury retryability inside prose in the message field — instead drop free-text retry guidance and expose it as a structured, service-defined signal (e.g., Stripe distinguishes `rate_limit_error`/`api_error` as retryable from `invalid_request_error`/most 400s as non-retryable, and recommends idempotency keys plus exponential backoff for the retryable class) so client SDKs can automate retry decisions instead of pattern-matching on human text. source: https://docs.stripe.com/error-handling?lang=node
+
+9. When a request is safe to retry (network failure, timeout, 5xx, or 429), require or support an idempotency key on the request and document which status/error-type combinations are safe to retry versus which must not be retried (Stripe: "400 (user) errors and 429... are not retried, nor are 500 errors which result from POST requests" without idempotency support) — this prevents duplicate side effects from naive client retry loops. source: https://docs.stripe.com/api/idempotent_requests
+
+10. When a service needs to expose more error context than a flat code+message (e.g., which fields are wrong, quota details, or a help link), use a typed, extensible details mechanism rather than free-form nested objects — Microsoft's `innererror` for progressively more specific codes, or google.rpc.Status's repeated `details` (`google.protobuf.Any`) with a well-known `BadRequest` type for validation — so that new detail types can be added without breaking existing clients that don't recognize them. source: https://google.aip.dev/193
+
+11. When designing error message text, write for the actual audience of the message (end user vs. integrating developer) and keep it concrete and actionable rather than terse or jargon-heavy — AIP-193 requires messages to "help a reasonably technical user understand and resolve the issue" and be "brief but actionable," and HCI research on programming error messages independently finds that cryptic, jargon-laden messages measurably slow debugging, though the research base here is thin (one CHI-era study plus a handful of later readability studies, not a mature literature). source: https://google.aip.dev/193
+
+12. When an error object could carry both a stable status/code and a description, always keep `status` (or the HTTP status equivalent) consistent with the actual response status code the client received — RFC 9457 requires that "generators must align this with the actual response code" specifically to avoid confusing HTTP-aware intermediaries (proxies, caches, gateways) that read the response line but not the body. source: https://www.rfc-editor.org/rfc/rfc9457.html
