@@ -19,6 +19,12 @@ claude plugin install api-design
 
 ## Layout
 
+- `playbook/<axis>.md` — operational decision-rule playbook (issue #1174):
+  condition→choice→source rules, one file per decision axis
+  (`resource-modeling`, `http-semantics`, `payload-design`,
+  `versioning-evolution`, `error-design`), each with a
+  `rule_count_floor:`/`axis:` front-matter pair and at least one
+  `**REMOVAL**`-marked subtractive rule per axis.
 - `api-design/.claude-plugin/plugin.json` — plugin manifest
 - `api-design/hooks/hooks.json` — SessionStart wiring
 - `api-design/hooks/directive.sh` — SessionStart role directive; a stub
